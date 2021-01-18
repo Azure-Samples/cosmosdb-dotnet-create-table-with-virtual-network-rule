@@ -5,8 +5,8 @@ languages:
 products:
 - azure
 extensions:
-- services: Cosmos-DB
-- platforms: dotnet
+  services: Cosmos-DB
+  platforms: dotnet
 ---
 
 # Create a CosmosDB configured with a Virtual Network Rule using C# #
