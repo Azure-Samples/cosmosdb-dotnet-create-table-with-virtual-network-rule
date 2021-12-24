@@ -11,7 +11,7 @@ extensions:
 
 # Create a CosmosDB configured with a Virtual Network Rule using C# #
 
- Azure CosmosDB sample for using Virtual Network ACL rules.
+ Azure Cosmos DB sample for using Virtual Network ACL rules.
   - Create a Virtual Network with two subnets.
   - Create an Azure Table CosmosDB account configured with a Virtual Network Rule
   - Add another virtual network rule in the CosmosDB account
