@@ -16,7 +16,6 @@ extensions:
   - Create an Azure Table CosmosDB account configured with a Virtual Network Rule
   - Add another virtual network rule in the CosmosDB account
   - List all virtual network rules.
-  - Delete a virtual network.
   - Delete the CosmosDB.
 
 

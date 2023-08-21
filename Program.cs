@@ -4,14 +4,11 @@
 using Azure;
 using Azure.Core;
 using Azure.Identity;
-using Azure.ResourceManager.Resources.Models;
 using Azure.ResourceManager.Samples.Common;
 using Azure.ResourceManager.Resources;
 using Azure.ResourceManager;
 using Azure.ResourceManager.CosmosDB.Models;
 using Azure.ResourceManager.CosmosDB;
-using Microsoft.Azure.Documents.Client;
-using Microsoft.Azure.Documents;
 using Azure.ResourceManager.Network;
 using Azure.ResourceManager.Network.Models;
 
