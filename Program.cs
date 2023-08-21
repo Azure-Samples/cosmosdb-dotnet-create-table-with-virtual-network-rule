@@ -12,6 +12,8 @@ using Azure.ResourceManager.CosmosDB.Models;
 using Azure.ResourceManager.CosmosDB;
 using Microsoft.Azure.Documents.Client;
 using Microsoft.Azure.Documents;
+using Azure.ResourceManager.Network;
+using Azure.ResourceManager.Network.Models;
 
 namespace CosmosDBTableWithVirtualNetworkRule
 {
@@ -47,47 +49,71 @@ namespace CosmosDBTableWithVirtualNetworkRule
 
                 // ============================================================
                 // Create a virtual network with two subnets.
-                Console.WriteLine("Creating a CosmosDB...");
+                Console.WriteLine("Create a virtual network with two subnets....");
 
-                var virtualNetwork = azure.Networks.Define(vnetName)
-                    .WithRegion(Region.USEast)
-                    .WithNewResourceGroup(rgName)
-                    .WithAddressSpace("192.168.0.0/16")
-                    .DefineSubnet("subnet1")
-                        .WithAddressPrefix("192.168.1.0/24")
-                        .WithAccessFromService(ServiceEndpointType.MicrosoftAzureCosmosDB)
-                        .Attach()
-                    .DefineSubnet("subnet2")
-                        .WithAddressPrefix("192.168.2.0/24")
-                        .WithAccessFromService(ServiceEndpointType.MicrosoftAzureCosmosDB)
-                        .Attach()
-                    .Create();
-
-                Console.WriteLine("Created a virtual network");
-                // Print the virtual network details
-                Utilities.PrintVirtualNetwork(virtualNetwork);
+                string vnetName = Utilities.CreateRandomName("vnet");
+                VirtualNetworkData vnetInput = new VirtualNetworkData()
+                {
+                    Location = resourceGroup.Data.Location,
+                    AddressPrefixes = { "10.10.0.0/16" },
+                    Subnets =
+                    {
+                        new SubnetData()
+                        {
+                            Name = "subnet1",
+                            AddressPrefix = "10.10.1.0/24",
+                            ServiceEndpoints ={ new ServiceEndpointProperties(){ Service  = "Microsoft.AzureCosmosDB" } }
+                        },
+                        new SubnetData()
+                        {
+                            Name = "subnet2",
+                            AddressPrefix = "10.10.2.0/24",
+                            ServiceEndpoints ={ new ServiceEndpointProperties(){ Service  = "Microsoft.AzureCosmosDB" } }
+                        },
+                    }
+                };
+                var vnetLro = await resourceGroup.GetVirtualNetworks().CreateOrUpdateAsync(WaitUntil.Completed, vnetName, vnetInput);
+                VirtualNetworkResource vnet = vnetLro.Value;
+                Console.WriteLine($"Created a virtual network {vnet.Id.Name}");
 
 
                 //============================================================
                 // Create a CosmosDB
-                Console.WriteLine("Creating a CosmosDB...");
+                Utilities.Log("Creating a CosmosDB...");
+                string dbAccountName = Utilities.CreateRandomName("dbaccount");
+                CosmosDBAccountKind cosmosDBKind = CosmosDBAccountKind.GlobalDocumentDB;
+                var locations = new List<CosmosDBAccountLocation>()
+                {
+                    new CosmosDBAccountLocation(){ LocationName  = AzureLocation.WestUS, FailoverPriority = 0 },
+                };
+                var dbAccountInput = new CosmosDBAccountCreateOrUpdateContent(AzureLocation.WestUS, locations)
+                {
+                    Kind = cosmosDBKind,
+                    ConsistencyPolicy = new Azure.ResourceManager.CosmosDB.Models.ConsistencyPolicy(DefaultConsistencyLevel.BoundedStaleness)
+                    {
+                        MaxStalenessPrefix = _maxStalenessPrefix,
+                        MaxIntervalInSeconds = _maxIntervalInSeconds
+                    },
+                    VirtualNetworkRules =
+                    {
+                        new CosmosDBVirtualNetworkRule(){ Id = vnet.Data.Subnets[0].Id }
+                    },
+                    IsVirtualNetworkFilterEnabled = true,
+                    EnableAutomaticFailover = false,
+                    DisableKeyBasedMetadataWriteAccess = false,
+                    ConnectorOffer = ConnectorOffer.Small,
+                };
 
-                ICosmosDBAccount cosmosDBAccount = azure.CosmosDBAccounts.Define(cosmosDBName)
-                        .WithRegion(Region.USWest)
-                        .WithExistingResourceGroup(rgName)
-                        .WithDataModelAzureTable()
-                        .WithEventualConsistency()
-                        .WithWriteReplication(Region.USEast)
-                        .WithVirtualNetworkRule(virtualNetwork.Id, "subnet1")
-                        .Create();
-
-                Console.WriteLine("Created CosmosDB");
-                Utilities.Print(cosmosDBAccount);
+                dbAccountInput.Tags.Add("key1", "value");
+                dbAccountInput.Tags.Add("key2", "value");
+                var accountLro = await resourceGroup.GetCosmosDBAccounts().CreateOrUpdateAsync(WaitUntil.Completed, dbAccountName, dbAccountInput);
+                CosmosDBAccountResource dbAccount = accountLro.Value;
+                Utilities.Log($"Created CosmosDB {dbAccount.Id.Name}");
 
                 // ============================================================
                 // Get the virtual network rule created above.
 
-                var vnetRules = cosmosDBAccount.VirtualNetworkRules;
+                var vnetRules = dbAccount.Data.VirtualNetworkRules;
 
                 Console.WriteLine("CosmosDB Virtual Network Rules:");
                 foreach (var vnetRule in vnetRules)
@@ -99,16 +125,22 @@ namespace CosmosDBTableWithVirtualNetworkRule
                 // ============================================================
                 // Add new virtual network rules.
 
-                cosmosDBAccount.Update()
-                    .WithVirtualNetworkRule(virtualNetwork.Id, "subnet2")
-                    .Apply();
-
+                Console.WriteLine("Add new virtual network rules to CosmosDB account..");
+                CosmosDBAccountPatch updataContent = new CosmosDBAccountPatch()
+                {
+                    VirtualNetworkRules =
+                    {
+                        new CosmosDBVirtualNetworkRule(){ Id = vnet.Data.Subnets[0].Id },
+                        new CosmosDBVirtualNetworkRule(){ Id = vnet.Data.Subnets[1].Id }
+                    }
+                };
+                var updated_dbAcccount = await dbAccount.UpdateAsync(WaitUntil.Completed, updataContent);
 
                 // ============================================================
                 // List then remove all virtual network rules.
                 Console.WriteLine("Listing all virtual network rules in CosmosDB account.");
 
-                vnetRules = cosmosDBAccount.VirtualNetworkRules;
+                vnetRules = updated_dbAcccount.Value.Data.VirtualNetworkRules;
 
                 Console.WriteLine("CosmosDB Virtual Network Rules:");
                 foreach (var vnetRule in vnetRules)
@@ -116,15 +148,10 @@ namespace CosmosDBTableWithVirtualNetworkRule
                     Console.WriteLine("\t" + vnetRule.Id);
                 }
 
-                cosmosDBAccount.Update()
-                    .WithVirtualNetworkRules(null)
-                    .Apply();
-
-                azure.Networks.DeleteById(virtualNetwork.Id);
-
                 //============================================================
                 // Delete CosmosDB
                 Utilities.Log("Deleting the CosmosDB");
+                await dbAccount.DeleteAsync(WaitUntil.Completed);
             }
             finally
             {
